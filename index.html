@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票收益紀錄 (專業版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; }
+        .card { background-color: #1f2937; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        .form-input { background-color: #374151; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 0.5rem; padding: 0.75rem 1rem; width: 100%; }
+        .btn { padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; transition: all 0.2s ease-in-out; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-primary { background-color: #3b82f6; color: white; }
+        .btn-primary:hover { background-color: #2563eb; }
+        .btn-secondary { background-color: #4b5563; color: white; }
+        .btn-secondary:hover { background-color: #6b7280; }
+        .loader { border: 4px solid #4b5563; border-top: 4px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .details-container {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out;
+        }
+        #toast-notification {
+            position: fixed;
+            top: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: top 0.5s ease-in-out;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen">
+    <!-- [新增] 訊息提示框 -->
+    <div id="toast-notification" class="p-4 rounded-lg shadow-lg text-white">
+        <span id="toast-message"></span>
+    </div>
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-white mb-2">股票收益紀錄</h1>
+            <p class="text-gray-400">自動追蹤您的台股投資組合表現</p>
+        </header>
+
+        <!-- 新增股票表單 -->
+        <div class="card mb-8">
+            <div class="flex justify-between items-center mb-4">
+                 <h2 class="text-xl font-semibold text-white">新增股票紀錄</h2>
+                 <div>
+                    <label for="imageUpload" class="btn btn-secondary cursor-pointer">
+                        <i data-lucide="image-plus" class="mr-2 h-5 w-5"></i>
+                        <span id="imageUploadText">圖片輸入</span>
+                        <div id="imageUploadLoader" class="loader h-5 w-5 ml-2 hidden"></div>
+                    </label>
+                    <input type="file" id="imageUpload" class="hidden" accept="image/*">
+                 </div>
+            </div>
+            <form id="addStockForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                 <div><label for="stockId" class="block text-sm font-medium text-gray-400 mb-2">股票代碼</label><input type="text" id="stockId" class="form-input" placeholder="例如: 2330" required></div>
+                 <div><label for="purchaseDate" class="block text-sm font-medium text-gray-400 mb-2">購買日期</label><input type="date" id="purchaseDate" class="form-input" required></div>
+                 <div><label for="purchaseShares" class="block text-sm font-medium text-gray-400 mb-2">購買張數</label><input type="number" id="purchaseShares" class="form-input" min="0.001" step="0.001" placeholder="1張 = 1000股" required></div>
+                 <div><label for="purchasePrice" class="block text-sm font-medium text-gray-400 mb-2">購買成本 (每股)</label><input type="number" id="purchasePrice" class="form-input" min="0" step="0.01" placeholder="例如: 688.5" required></div>
+                 <button type="submit" class="btn btn-primary w-full lg:w-auto"><i data-lucide="plus-circle" class="mr-2 h-5 w-5"></i><span>新增紀錄</span></button>
+            </form>
+        </div>
+
+        <div id="portfolio" class="mb-8">
+            <h2 class="text-2xl font-bold text-white mb-4">我的投資組合</h2>
+            <div id="stockList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"></div>
+        </div>
+
+        <div id="summary" class="card">
+            <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
+                <h2 class="text-2xl font-bold text-white">年度總覽</h2>
+                <div class="flex items-center gap-2">
+                     <label for="fiscalYearStart" class="text-sm text-gray-400 whitespace-nowrap">統計起始月份:</label>
+                    <select id="fiscalYearStart" class="form-input text-sm py-2">
+                        <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
+                        <option value="4">4月</option><option value="5">5月</option><option value="6">6月</option>
+                        <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
+                        <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+                    </select>
+                </div>
+            </div>
+            <div id="summaryTableContainer" class="overflow-x-auto"></div>
+        </div>
+    </div>
+    
+    <div id="addDividendModal" class="modal-backdrop hidden">
+        <div class="card w-full max-w-md">
+            <h2 class="text-xl font-semibold text-white mb-4">手動新增股利</h2>
+            <form id="addDividendForm">
+                <input type="hidden" id="modalStockId">
+                <div class="mb-4"><label for="modalDividendExDate" class="block text-sm font-medium text-gray-400 mb-2">除息日</label><input type="date" id="modalDividendExDate" class="form-input" required></div>
+                <div class="mb-6"><label for="modalDividendAmount" class="block text-sm font-medium text-gray-400 mb-2">現金股利 (每股)</label><input type="number" step="0.0001" id="modalDividendAmount" class="form-input" required></div>
+                <div class="flex justify-end gap-4"><button type="button" id="cancelAddDividend" class="btn btn-secondary">取消</button><button type="submit" class="btn btn-primary">確認新增</button></div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const BUY_FEE_RATE = 0.001425;
+        let portfolio = [];
+        let settings = { fiscalYearStart: 1, manualOverrides: {} };
+
+        const addStockForm = document.getElementById('addStockForm');
+        const stockListContainer = document.getElementById('stockList');
+        const summaryContainer = document.getElementById('summaryTableContainer');
+        const fiscalYearStartSelect = document.getElementById('fiscalYearStart');
+        const addDividendModal = document.getElementById('addDividendModal');
+        const addDividendForm = document.getElementById('addDividendForm');
+        const cancelAddDividendBtn = document.getElementById('cancelAddDividend');
+        const imageUploadInput = document.getElementById('imageUpload');
+        const imageUploadText = document.getElementById('imageUploadText');
+        const imageUploadLoader = document.getElementById('imageUploadLoader');
+        const toast = document.getElementById('toast-notification');
+        const toastMessage = document.getElementById('toast-message');
+        
+        async function fetchStockData(stockId, purchaseDateStr) {
+            let price = null, priceDate = null, stockName = null, priceStatus = 'ok';
+            let dividends = [], dividendStatus = 'ok';
+            const proxyUrl = `https://corsproxy.io/?`;
+
+            try {
+                const tseUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw`;
+                const otcUrl = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${stockId}.tw`;
+                
+                const parseTwseData = (data) => {
+                    if (data.msgArray && data.msgArray.length > 0) {
+                        const info = data.msgArray[0];
+                        const rawDate = info.d;
+                        if (rawDate && rawDate.length === 8) {
+                            const formattedDateStr = `${rawDate.substring(0, 4)}-${rawDate.substring(4, 6)}-${rawDate.substring(6, 8)}`;
+                            priceDate = new Date(formattedDateStr).toLocaleDateString('zh-TW', {month:'2-digit', day:'2-digit'});
+                        } else { priceDate = 'N/A'; }
+                        price = parseFloat(info.z);
+                        stockName = info.n;
+                        return true;
+                    }
+                    return false;
+                };
+
+                let response = await fetch(`${proxyUrl}${encodeURIComponent(tseUrl)}`);
+                let data = await response.json();
+
+                if (!parseTwseData(data)) {
+                    response = await fetch(`${proxyUrl}${encodeURIComponent(otcUrl)}`);
+                    data = await response.json();
+                    parseTwseData(data);
+                }
+                
+                if (isNaN(price) || price === 0) { price = null; priceStatus = 'nodata'; }
+            } catch (e) {
+                console.error(`無法獲取 ${stockId} 的股價:`, e);
+                priceStatus = 'failed';
+            }
+
+            try {
+                let tickerSuffix = '.TW';
+                if (stockId.toUpperCase().endsWith('B')) {
+                    tickerSuffix = '.TWO';
+                } else if (stockId.length === 4 && !stockId.startsWith('00')) {
+                    const otcPrefixes = ['3', '4', '5', '6', '8'];
+                    if (otcPrefixes.includes(stockId[0])) {
+                        tickerSuffix = '.TWO';
+                    }
+                }
+                const yahooTicker = `${stockId}${tickerSuffix}`;
+                const startDate = new Date(purchaseDateStr);
+                startDate.setDate(startDate.getDate() - 1);
+                const period1 = Math.floor(startDate.getTime() / 1000);
+                const period2 = Math.floor(new Date().getTime() / 1000);
+
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?period1=${period1}&period2=${period2}&interval=1d&events=div`;
+                const response = await fetch(`${proxyUrl}${encodeURIComponent(yahooUrl)}`);
+                if (!response.ok) throw new Error('Yahoo Finance API failed');
+                
+                const data = await response.json();
+                if (data.chart.result && data.chart.result[0] && data.chart.result[0].events && data.chart.result[0].events.dividends) {
+                    const dividendEvents = data.chart.result[0].events.dividends;
+                    dividends = Object.values(dividendEvents).map(event => ({
+                        date: new Date(event.date * 1000).toISOString().split('T')[0],
+                        dividend: event.amount
+                    }));
+                    dividendStatus = 'ok';
+                } else { dividendStatus = 'nodata'; }
+            } catch (e) {
+                console.error(`無法從 Yahoo Finance 獲取 ${stockId} 的配息歷史:`, e);
+                dividendStatus = 'failed';
+            }
+
+            return { price, priceDate, stockName, priceStatus, dividends, dividendStatus };
+        }
+
+        function calculateStockMetrics(stock, currentPrice, apiDividends) {
+            const stockData = { ...stock };
+            const totalShares = stockData.shares * 1000;
+            
+            const manualDividends = stockData.manualDividends || [];
+            const combinedDividends = [...apiDividends, ...manualDividends];
+            const uniqueDividends = Array.from(new Map(combinedDividends.map(d => [d.date, d])).values());
+
+            stockData.totalCost = (stockData.price * totalShares) * (1 + BUY_FEE_RATE);
+            
+            const stockOverrides = (settings.manualOverrides[stock.id] && settings.manualOverrides[stock.id].dividends) || {};
+            const finalDividends = uniqueDividends.map(div => {
+                 const override = stockOverrides[div.date];
+                 if (override && override.deleted) return null;
+                 return {
+                    ...div,
+                    date: override && override.newDate ? override.newDate : div.date,
+                    dividend: override && override.newAmount !== undefined ? override.newAmount : div.dividend,
+                    isOverridden: override !== undefined,
+                    originalDate: div.date
+                 }
+            }).filter(Boolean);
+
+            stockData.dividends = finalDividends.filter(d => new Date(d.date) >= new Date(stockData.date));
+            stockData.cumulativeDividend = stockData.dividends.reduce((acc, curr) => acc + (curr.dividend * totalShares), 0);
+            stockData.avgHoldingCost = totalShares > 0 ? (stockData.totalCost - stockData.cumulativeDividend) / totalShares : 0;
+            stockData.currentValue = currentPrice * totalShares;
+            stockData.returnAmount = (stockData.currentValue + stockData.cumulativeDividend) - stockData.totalCost;
+            stockData.returnRate = stockData.totalCost > 0 ? (stockData.returnAmount / stockData.totalCost) * 100 : 0;
+            
+            const oneYearAgo = new Date(new Date().setFullYear(new Date().getFullYear() - 1));
+            const lastYearTotalDividendPerShare = finalDividends
+                .filter(d => new Date(d.date) > oneYearAgo)
+                .reduce((sum, d) => sum + d.dividend, 0);
+            
+            stockData.projectedAnnualDividend = lastYearTotalDividendPerShare * totalShares;
+
+            return stockData;
+        }
+        
+        function calculateGroupMetrics(transactions, stockId) {
+            const group = {
+                id: stockId,
+                totalShares: 0, totalCost: 0, cumulativeDividend: 0,
+                currentValue: 0, projectedAnnualDividend: 0, returnAmount: 0,
+                returnRate: 0, avgHoldingCost: 0,
+                dividends: []
+            };
+
+            const allDividends = [];
+            transactions.forEach(tx => {
+                group.totalShares += tx.shares;
+                group.totalCost += tx.totalCost;
+                group.cumulativeDividend += tx.cumulativeDividend;
+                group.currentValue += tx.currentValue;
+                group.projectedAnnualDividend += tx.projectedAnnualDividend;
+                allDividends.push(...tx.dividends);
+            });
+            
+            group.dividends = Array.from(new Map(allDividends.map(d => [d.originalDate, d])).values()).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+            if (settings.manualOverrides && settings.manualOverrides[stockId] && settings.manualOverrides[stockId].projected !== undefined) {
+                group.projectedAnnualDividend = settings.manualOverrides[stockId].projected;
+            }
+
+            const totalSharesInUnits = group.totalShares * 1000;
+            group.avgHoldingCost = totalSharesInUnits > 0 ? (group.totalCost - group.cumulativeDividend) / totalSharesInUnits : 0;
+            group.returnAmount = (group.currentValue + group.cumulativeDividend) - group.totalCost;
+            group.returnRate = group.totalCost > 0 ? (group.returnAmount / group.totalCost) * 100 : 0;
+
+            return group;
+        }
+
+        async function renderPortfolio() {
+            stockListContainer.innerHTML = '';
+            if (portfolio.length === 0) {
+                stockListContainer.innerHTML = '<p class="text-gray-400 col-span-full text-center py-8">尚未新增任何股票紀錄。</p>';
+                renderSummary([]);
+                return;
+            }
+
+            const groupedPortfolio = portfolio.reduce((acc, tx) => {
+                if (!acc[tx.id]) { acc[tx.id] = []; }
+                acc[tx.id].push(tx);
+                return acc;
+            }, {});
+
+            for (const stockId in groupedPortfolio) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.id = `card-${stockId}`;
+                card.innerHTML = `<div class="flex justify-between items-start mb-4"><div><h3 class="text-2xl font-bold text-white">${stockId}</h3><p class="text-sm text-gray-400">${groupedPortfolio[stockId].length} 筆交易</p></div></div><div class="flex items-center justify-center h-48"><div class="loader"></div><p class="ml-4 text-gray-400">正在獲取數據...</p></div>`;
+                stockListContainer.appendChild(card);
+            }
+            lucide.createIcons();
+
+            const allMetricsForSummary = [];
+            for (const stockId in groupedPortfolio) {
+                const transactions = groupedPortfolio[stockId];
+                const earliestPurchaseDate = transactions.reduce((earliest, tx) => new Date(tx.date) < new Date(earliest) ? tx.date : earliest, transactions[0].date);
+                
+                const stockData = await fetchStockData(stockId, earliestPurchaseDate);
+                const useBackupPrice = stockData.priceStatus !== 'ok';
+                const currentPrice = useBackupPrice ? transactions[0].price : stockData.price;
+                const priceDate = useBackupPrice ? '備用' : (stockData.priceDate || 'N/A');
+
+                const transactionMetrics = transactions.map(tx => calculateStockMetrics(tx, currentPrice, stockData.dividends));
+                allMetricsForSummary.push(...transactionMetrics);
+                
+                const groupMetrics = calculateGroupMetrics(transactionMetrics, stockId);
+                
+                const isProjectedOverridden = settings.manualOverrides && settings.manualOverrides[stockId] && settings.manualOverrides[stockId].projected !== undefined;
+                const projectedDividendValue = `<span class="font-semibold ${isProjectedOverridden ? 'text-yellow-400' : ''}" ${isProjectedOverridden ? 'title="手動設定值"' : ''}>${Math.round(groupMetrics.projectedAnnualDividend).toLocaleString()}</span>`;
+                const projectedDividendHTML = stockData.dividendStatus !== 'ok' && !isProjectedOverridden
+                    ? `<span class="font-semibold text-sm text-yellow-500">股利資料載入失敗</span>`
+                    : projectedDividendValue;
+                const resetProjectedBtnHTML = isProjectedOverridden ? `<button onclick="handleResetProjectedDividend('${stockId}')" class="ml-1 text-gray-500 hover:text-yellow-400" title="恢復為自動計算"><i data-lucide="rotate-ccw" class="h-4 w-4"></i></button>` : '';
+
+                const detailsHTML = transactionMetrics.map(tx => `
+                    <div class="flex justify-between items-center text-xs py-2 border-b border-gray-700 last:border-b-0">
+                        <div class="text-gray-400">
+                            <span>${tx.date}</span>
+                            <span class="ml-2">${tx.shares} 張 @ ${tx.price}</span>
+                        </div>
+                        <button class="text-gray-500 hover:text-red-400" onclick="deleteStock('${tx.uuid}')"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                    </div>
+                `).join('');
+                
+                const dividendDetailsHTML = groupMetrics.dividends.length > 0 ? groupMetrics.dividends.map(div => {
+                    const isDivOverridden = div.isOverridden;
+                    const dividendValue = `<span class="font-semibold ${isDivOverridden ? 'text-yellow-400' : ''}" ${isDivOverridden ? 'title="手動設定值"' : ''}>${div.dividend.toFixed(4)}</span>`;
+                    const resetDivBtnHTML = isDivOverridden ? `<button onclick="handleResetIndividualDividend('${stockId}', '${div.originalDate}')" class="ml-1 text-gray-500 hover:text-yellow-400" title="恢復為自動計算"><i data-lucide="rotate-ccw" class="h-4 w-4"></i></button>` : '';
+                    return `
+                    <div class="flex justify-between items-center text-xs py-2 border-b border-gray-700 last:border-b-0">
+                        <div id="div-display-${stockId}-${div.originalDate}" class="flex items-center justify-between w-full">
+                           <span class="text-gray-400">${div.date}</span>
+                           <div class="flex items-center">
+                                ${dividendValue}
+                                <button onclick="showEditDividendRow('${stockId}', '${div.originalDate}')" class="ml-1 text-gray-500 hover:text-blue-400"><i data-lucide="pencil" class="h-4 w-4"></i></button>
+                                ${resetDivBtnHTML}
+                           </div>
+                        </div>
+                        <div id="div-edit-${stockId}-${div.originalDate}" class="hidden w-full flex gap-1 items-center">
+                            <input type="date" value="${div.date}" id="input-div-date-${stockId}-${div.originalDate}" class="form-input text-xs p-1 w-2/5">
+                            <input type="number" step="0.0001" value="${div.dividend}" id="input-div-amount-${stockId}-${div.originalDate}" class="form-input text-xs p-1 w-1/4">
+                            <button onclick="handleUpdateIndividualDividend('${stockId}', '${div.originalDate}')" class="btn btn-primary p-1"><i data-lucide="check" class="h-3 w-3"></i></button>
+                            <button onclick="handleDeleteIndividualDividend('${stockId}', '${div.originalDate}')" class="btn btn-secondary p-1"><i data-lucide="trash-2" class="h-3 w-3"></i></button>
+                            <button onclick="hideEditDividendRow('${stockId}', '${div.originalDate}')" class="btn btn-secondary p-1"><i data-lucide="x" class="h-3 w-3"></i></button>
+                        </div>
+                    </div>
+                `}).join('') : '<p class="text-xs text-gray-500 text-center py-2">無配息紀錄</p>';
+
+                const card = document.getElementById(`card-${stockId}`);
+                card.innerHTML = `<div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div id="header-display-${stockId}">
+                             <h3 class="text-2xl font-bold text-white flex items-center">${groupMetrics.id} <span class="text-xl font-normal text-gray-300 ml-2">${stockData.stockName || ''}</span>
+                                <button onclick="showEditStockIdForm('${stockId}')" class="ml-2 text-gray-500 hover:text-blue-400"><i data-lucide="pencil" class="h-4 w-4"></i></button>
+                             </h3>
+                            <p class="text-sm text-gray-400">${transactions.length} 筆交易</p>
+                        </div>
+                        <div id="header-edit-${stockId}" class="hidden w-full">
+                            <div class="flex gap-2">
+                                <input type="text" value="${stockId}" id="input-stockId-${stockId}" class="form-input text-lg">
+                                <button onclick="handleUpdateStockId('${stockId}')" class="btn btn-primary p-2"><i data-lucide="check" class="h-5 w-5"></i></button>
+                                <button onclick="hideEditStockIdForm('${stockId}')" class="btn btn-secondary p-2"><i data-lucide="x" class="h-5 w-5"></i></button>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-down" id="chevron-${stockId}" class="h-6 w-6 text-gray-500 transition-transform cursor-pointer" onclick="toggleDetails('${stockId}')"></i>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="flex justify-between items-center"><span class="text-gray-400">目前股價</span><div><span class="font-semibold">${currentPrice.toFixed(2)}</span><span class="text-xs text-gray-500 ml-1">(${priceDate})</span></div></div>
+                        <div class="flex justify-between"><span class="text-gray-400">總持有張數</span><span class="font-semibold">${groupMetrics.totalShares.toLocaleString()}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-400">總投資成本</span><span class="font-semibold">${Math.round(groupMetrics.totalCost).toLocaleString()}</span></div>
+                        <div class="flex flex-col">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-400" title="自您購入股票後，實際已收到的現金股利總和">累積股利</span>
+                                <div class="flex items-center">
+                                    <span class="font-semibold text-green-400">+${Math.round(groupMetrics.cumulativeDividend).toLocaleString()}</span>
+                                    <button onclick="handleResetAllDividendsForStock('${stockId}')" class="ml-1 text-gray-500 hover:text-yellow-400" title="還原所有股利為自動計算"><i data-lucide="rotate-ccw" class="h-4 w-4"></i></button>
+                                    <i data-lucide="chevron-down" class="h-4 w-4 text-gray-500 cursor-pointer ml-1" onclick="toggleDividendDetails('${stockId}')"></i>
+                                </div>
+                            </div>
+                            <div class="details-container pl-4 mt-2" id="dividend-details-${stockId}">
+                                ${dividendDetailsHTML}
+                                <div class="pt-2 mt-2 border-t border-gray-700">
+                                    <button onclick="showAddDividendModalByStockId('${stockId}')" class="w-full text-xs btn btn-secondary py-1 px-2">
+                                        <i data-lucide="plus" class="h-3 w-3 mr-1"></i> 手動新增一筆股利
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between"><span class="text-gray-400">持有均價</span><span class="font-semibold">${groupMetrics.avgHoldingCost > 0 ? groupMetrics.avgHoldingCost.toFixed(2) : 'N/A'}</span></div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-400">預計一年利息</span>
+                            <div id="dividend-display-${stockId}" class="flex items-center">${projectedDividendHTML} <button onclick="showEditDividendForm('${stockId}')" class="ml-1 text-gray-500 hover:text-blue-400"><i data-lucide="pencil" class="h-4 w-4"></i></button>${resetProjectedBtnHTML}</div>
+                            <div id="dividend-edit-${stockId}" class="hidden w-full flex gap-2">
+                                <input type="number" value="${Math.round(groupMetrics.projectedAnnualDividend)}" id="input-dividend-${stockId}" class="form-input text-sm">
+                                <button onclick="handleUpdateProjectedDividend('${stockId}')" class="btn btn-primary p-2"><i data-lucide="check" class="h-4 w-4"></i></button>
+                                <button onclick="hideEditDividendForm('${stockId}')" class="btn btn-secondary p-2"><i data-lucide="x" class="h-4 w-4"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="details-container mt-4 pt-4 border-t border-gray-700" id="details-${stockId}">
+                    ${detailsHTML}
+                </div>
+                <div class="mt-6 pt-4 border-t border-gray-600">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">整體報酬率</span>
+                        <span class="text-xl font-bold ${groupMetrics.returnRate >= 0 ? 'text-green-400' : 'text-red-400'}">${groupMetrics.returnRate.toFixed(2)}%</span>
+                    </div>
+                </div>`;
+            }
+            lucide.createIcons();
+            renderSummary(allMetricsForSummary);
+        }
+        
+        window.toggleDetails = function(stockId) {
+            const detailsContainer = document.getElementById(`details-${stockId}`);
+            const chevron = document.getElementById(`chevron-${stockId}`);
+            if (detailsContainer.style.maxHeight) {
+                detailsContainer.style.maxHeight = null;
+                chevron.style.transform = 'rotate(0deg)';
+            } else {
+                detailsContainer.style.maxHeight = detailsContainer.scrollHeight + "px";
+                chevron.style.transform = 'rotate(180deg)';
+            }
+        }
+        
+        window.toggleDividendDetails = function(stockId) {
+            const detailsContainer = document.getElementById(`dividend-details-${stockId}`);
+            if (detailsContainer.style.maxHeight) {
+                detailsContainer.style.maxHeight = null;
+            } else {
+                detailsContainer.style.maxHeight = detailsContainer.scrollHeight + "px";
+            }
+        }
+        
+        function renderSummary(allMetrics) {
+            summaryContainer.innerHTML = '';
+            if (!allMetrics || allMetrics.length === 0) {
+                summaryContainer.innerHTML = '<p class="text-gray-400 text-center py-8">無資料可供統計。</p>';
+                return;
+            }
+            let summaryData = {};
+            let totalProjectedDividends = 0, totalInvestment = 0;
+            
+            const groupedMetrics = allMetrics.reduce((acc, tx) => {
+                if (!acc[tx.id]) { acc[tx.id] = []; }
+                acc[tx.id].push(tx);
+                return acc;
+            }, {});
+
+            for (const stockId in groupedMetrics) {
+                const group = calculateGroupMetrics(groupedMetrics[stockId], stockId);
+                totalProjectedDividends += group.projectedAnnualDividend;
+            }
+
+            for (const metrics of allMetrics) {
+                metrics.dividends.forEach(d => {
+                    const dividendDate = new Date(d.date);
+                    let fiscalYear = dividendDate.getFullYear();
+                    if (dividendDate.getMonth() + 1 < settings.fiscalYearStart) fiscalYear--;
+                    if (!summaryData[fiscalYear]) summaryData[fiscalYear] = { receivedDividends: 0, investment: 0 };
+                    summaryData[fiscalYear].receivedDividends += d.dividend * metrics.shares * 1000;
+                });
+                const purchaseDate = new Date(metrics.date);
+                let purchaseFiscalYear = purchaseDate.getFullYear();
+                if (purchaseDate.getMonth() + 1 < settings.fiscalYearStart) purchaseFiscalYear--;
+                if (!summaryData[purchaseFiscalYear]) summaryData[purchaseFiscalYear] = { receivedDividends: 0, investment: 0 };
+                summaryData[purchaseFiscalYear].investment += metrics.totalCost;
+                totalInvestment += metrics.totalCost;
+            }
+
+            const today = new Date();
+            const currentMonth = today.getMonth() + 1;
+            let currentFiscalYear = today.getFullYear();
+            if (currentMonth < settings.fiscalYearStart) {
+                currentFiscalYear--;
+            }
+            if (!summaryData[currentFiscalYear]) {
+                summaryData[currentFiscalYear] = { receivedDividends: 0, investment: 0 };
+            }
+
+            const sortedYears = Object.keys(summaryData).sort((a, b) => b - a);
+            let tableHTML = `<table class="w-full text-left"><thead class="border-b border-gray-700"><tr><th class="p-4 text-sm font-semibold text-gray-300">年度</th><th class="p-4 text-sm font-semibold text-gray-300 text-right">已獲利息總額</th><th class="p-4 text-sm font-semibold text-gray-300 text-right">該年投入金額</th></tr></thead><tbody>`;
+            
+            sortedYears.forEach(year => {
+                const yearData = summaryData[year];
+                const startMonth = settings.fiscalYearStart;
+                const endMonth = (startMonth - 2 + 12) % 12 + 1;
+                const endYear = parseInt(year) + 1;
+                const yearDisplay = `${year}/${String(startMonth).padStart(2, '0')} ~ ${endYear}/${String(endMonth).padStart(2, '0')}`;
+
+                tableHTML += `<tr class="border-b border-gray-800"><td class="p-4 font-semibold">${yearDisplay}</td><td class="p-4 text-right text-green-400">+${Math.round(yearData.receivedDividends).toLocaleString()}</td><td class="p-4 text-right">${Math.round(yearData.investment).toLocaleString()}</td></tr>`;
+            });
+            
+            tableHTML += `</tbody><tfoot class="font-bold"><tr class="border-t-2 border-gray-600"><td class="p-4">總計</td><td class="p-4 text-right" colspan="2"></td></tr><tr><td class="px-4 pb-2 text-gray-400">目前投入總金額</td><td class="px-4 pb-2 text-right" colspan="2">${Math.round(totalInvestment).toLocaleString()}</td></tr><tr><td class="px-4 pb-4 text-gray-400">預計年利息總額</td><td class="px-4 pb-4 text-right text-blue-400" colspan="2">${Math.round(totalProjectedDividends).toLocaleString()}</td></tr></tfoot></table>`;
+            summaryContainer.innerHTML = tableHTML;
+        }
+
+        function handleAddStock(e) {
+            e.preventDefault();
+            const newStock = { uuid: self.crypto.randomUUID(), id: document.getElementById('stockId').value.trim(), date: document.getElementById('purchaseDate').value, shares: parseFloat(document.getElementById('purchaseShares').value), price: parseFloat(document.getElementById('purchasePrice').value), manualDividends: [] };
+            portfolio.push(newStock);
+            saveData();
+            renderPortfolio();
+            addStockForm.reset();
+            document.getElementById('purchaseDate').valueAsDate = new Date();
+        }
+
+        window.deleteStock = function(uuid) {
+            portfolio = portfolio.filter(stock => stock.uuid !== uuid);
+            saveData();
+            renderPortfolio();
+        }
+        
+        function handleSettingsChange() {
+            settings.fiscalYearStart = parseInt(fiscalYearStartSelect.value);
+            saveData();
+            renderPortfolio();
+        }
+
+        window.showAddDividendModalByStockId = function(stockId) {
+            document.getElementById('modalStockId').value = stockId;
+            addDividendModal.classList.remove('hidden');
+        }
+
+        function hideAddDividendModal() {
+            addDividendModal.classList.add('hidden');
+            addDividendForm.reset();
+        }
+
+        function handleAddDividend(e) {
+            e.preventDefault();
+            const stockId = document.getElementById('modalStockId').value;
+            const stock = portfolio.find(s => s.id === stockId);
+            if (stock) {
+                if (!stock.manualDividends) stock.manualDividends = [];
+                stock.manualDividends.push({ date: document.getElementById('modalDividendExDate').value, dividend: parseFloat(document.getElementById('modalDividendAmount').value) });
+                saveData();
+                renderPortfolio();
+            }
+            hideAddDividendModal();
+        }
+        
+        window.showEditStockIdForm = (stockId) => {
+            document.getElementById(`header-display-${stockId}`).classList.add('hidden');
+            document.getElementById(`header-edit-${stockId}`).classList.remove('hidden');
+            lucide.createIcons();
+        }
+        window.hideEditStockIdForm = (stockId) => {
+            document.getElementById(`header-display-${stockId}`).classList.remove('hidden');
+            document.getElementById(`header-edit-${stockId}`).classList.add('hidden');
+        }
+        window.handleUpdateStockId = (oldStockId) => {
+            const newStockId = document.getElementById(`input-stockId-${oldStockId}`).value.trim();
+            if (newStockId && newStockId !== oldStockId) {
+                portfolio.forEach(tx => {
+                    if (tx.id === oldStockId) {
+                        tx.id = newStockId;
+                    }
+                });
+                saveData();
+                renderPortfolio();
+            } else {
+                hideEditStockIdForm(oldStockId);
+            }
+        }
+        window.showEditDividendForm = (stockId) => {
+            document.getElementById(`dividend-display-${stockId}`).classList.add('hidden');
+            document.getElementById(`dividend-edit-${stockId}`).classList.remove('hidden');
+            lucide.createIcons();
+        }
+        window.hideEditDividendForm = (stockId) => {
+            document.getElementById(`dividend-display-${stockId}`).classList.remove('hidden');
+            document.getElementById(`dividend-edit-${stockId}`).classList.add('hidden');
+        }
+        window.handleUpdateProjectedDividend = (stockId) => {
+            const inputEl = document.getElementById(`input-dividend-${stockId}`);
+            const newDividend = parseFloat(inputEl.value);
+            if (!isNaN(newDividend)) {
+                if (!settings.manualOverrides[stockId]) settings.manualOverrides[stockId] = {};
+                settings.manualOverrides[stockId].projected = newDividend;
+                saveData();
+                renderPortfolio();
+            } else {
+                hideEditDividendForm(stockId);
+            }
+        }
+        window.handleResetProjectedDividend = (stockId) => {
+            if (settings.manualOverrides && settings.manualOverrides[stockId] && settings.manualOverrides[stockId].projected !== undefined) {
+                delete settings.manualOverrides[stockId].projected;
+                saveData();
+                renderPortfolio();
+                showToast(`已將 ${stockId} 的預計利息恢復為自動計算。`);
+            }
+        }
+
+        window.showEditDividendRow = (stockId, originalDate) => {
+            document.getElementById(`div-display-${stockId}-${originalDate}`).classList.add('hidden');
+            document.getElementById(`div-edit-${stockId}-${originalDate}`).classList.remove('hidden');
+            lucide.createIcons();
+        }
+        window.hideEditDividendRow = (stockId, originalDate) => {
+            document.getElementById(`div-display-${stockId}-${originalDate}`).classList.remove('hidden');
+            document.getElementById(`div-edit-${stockId}-${originalDate}`).classList.add('hidden');
+        }
+        window.handleUpdateIndividualDividend = (stockId, originalDate) => {
+            const dateInputEl = document.getElementById(`input-div-date-${stockId}-${originalDate}`);
+            const amountInputEl = document.getElementById(`input-div-amount-${stockId}-${originalDate}`);
+            const newDate = dateInputEl.value;
+            const newAmount = parseFloat(amountInputEl.value);
+
+            if (newDate && !isNaN(newAmount)) {
+                if (!settings.manualOverrides[stockId]) settings.manualOverrides[stockId] = {};
+                if (!settings.manualOverrides[stockId].dividends) settings.manualOverrides[stockId].dividends = {};
+                
+                settings.manualOverrides[stockId].dividends[originalDate] = {
+                    newDate: newDate,
+                    newAmount: newAmount
+                };
+                
+                saveData();
+                renderPortfolio();
+            } else {
+                hideEditDividendRow(stockId, originalDate);
+            }
+        }
+        window.handleResetIndividualDividend = (stockId, originalDate) => {
+            if (settings.manualOverrides && settings.manualOverrides[stockId] && settings.manualOverrides[stockId].dividends && settings.manualOverrides[stockId].dividends[originalDate] !== undefined) {
+                delete settings.manualOverrides[stockId].dividends[originalDate];
+                saveData();
+                renderPortfolio();
+                showToast(`已將 ${stockId} 於 ${originalDate} 的股利恢復為自動計算。`);
+            }
+        }
+        window.handleDeleteIndividualDividend = (stockId, originalDate) => {
+             if (!settings.manualOverrides[stockId]) settings.manualOverrides[stockId] = {};
+             if (!settings.manualOverrides[stockId].dividends) settings.manualOverrides[stockId].dividends = {};
+             settings.manualOverrides[stockId].dividends[originalDate] = { deleted: true };
+             saveData();
+             renderPortfolio();
+             showToast(`已刪除 ${stockId} 於 ${originalDate} 的股利紀錄。`);
+        }
+        
+        window.handleResetAllDividendsForStock = (stockId) => {
+            portfolio.forEach(tx => {
+                if (tx.id === stockId) {
+                    tx.manualDividends = [];
+                }
+            });
+            if (settings.manualOverrides && settings.manualOverrides[stockId] && settings.manualOverrides[stockId].dividends) {
+                delete settings.manualOverrides[stockId].dividends;
+            }
+            saveData();
+            renderPortfolio();
+            showToast(`已將 ${stockId} 的所有股利紀錄恢復為自動計算。`);
+        }
+
+
+        function showToast(message, isError = false) {
+            toastMessage.textContent = message;
+            toast.className = `p-4 rounded-lg shadow-lg text-white ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            toast.style.top = '20px';
+            setTimeout(() => {
+                toast.style.top = '-100px';
+            }, 3000);
+        }
+
+        function parseAndFormatDate(dateStr) {
+            if (!dateStr) return null;
+            let date = new Date(dateStr.replace(/\//g, '-'));
+            if (!isNaN(date.getTime())) {
+                return date.toISOString().split('T')[0];
+            }
+            const minguoMatch = dateStr.match(/(\d{2,3})[.\/](\d{1,2})[.\/](\d{1,2})/);
+            if (minguoMatch) {
+                const year = parseInt(minguoMatch[1]) + 1911;
+                const month = parseInt(minguoMatch[2]);
+                const day = parseInt(minguoMatch[3]);
+                date = new Date(year, month - 1, day);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString().split('T')[0];
+                }
+            }
+            return null;
+        }
+
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            imageUploadText.textContent = '辨識中...';
+            imageUploadLoader.classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64ImageData = reader.result.split(',')[1];
+                
+                try {
+                    const prompt = `你是一位極度嚴謹且精確的台灣股市交易紀錄辨識AI。你的唯一任務是分析券商軟體截圖，找出所有「買進」的交易紀錄，並以絕對的準確性回傳資料。
+
+**核心辨識流程與鐵則：**
+
+1.  **辨識股名 (Exact Match First)**: 首先，精確地辨識出圖片中「股名」欄位的完整文字，例如「富邦台灣中小」。
+2.  **查詢代碼 (Verification is Key)**: 使用辨識出的完整股名，查詢其在台灣股市中**唯一對應**的股票代碼。你必須進行驗證，確保股名與代碼是正確的配對。
+3.  **嚴禁聯想或猜測**: 絕對禁止任何形式的模糊聯想。如果股名是「富邦台灣中小」，其代碼就是「00770」。你絕不能因為看到「中小」就聯想到其他股票，或看到「富邦」就聯想到其他富邦投信的ETF。**錯誤的關聯是不可接受的。**
+
+**提取資訊的詳細規則：**
+
+* **stockTicker (股票代碼)**：根據上述嚴格的查詢流程得出的4到6位數字代碼。
+* **purchaseDate (交易日期)**：將圖片中的日期（可能是民國年 \`113/08/19\` 或西元年 \`2024/08/19\`）一律轉換為標準西元年格式 \`"YYYY-MM-DD"\`。
+* **purchaseShares (購買張數)**：輸出的單位必須是「張」。如果圖片單位是「股」，請將其數值除以1000（例如：看到 \`'2000股'\`，請輸出數字 \`2\`）。
+* **purchasePrice (購買成本)**：每股的成交單價。
+
+**輸出格式：**
+請將所有辨識出的交易，以一個 JSON 陣列格式回傳。
+
+**重要範例 (你必須學習並遵守)：**
+* **輸入股名**: "富邦台灣中小" -> **輸出 stockTicker**: "00770"
+* **輸入股名**: "元大台灣高息低波" -> **輸出 stockTicker**: "00713"
+* **輸入股名**: "國泰北美科技" -> **輸出 stockTicker**: "00898"
+* **輸入股名**: "群益ESG投等債20+" -> **輸出 stockTicker**: "00937B"
+
+如果圖片模糊不清，或你無法 100% 確定股名與代碼的正確對應，請回傳一個空的 JSON 陣列 \`[]\`，以確保數據的絕對準確性。`;
+
+                    const payload = {
+                        contents: [ { parts: [ { text: prompt }, { inlineData: { mimeType: file.type, data: base64ImageData } } ] } ],
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        stockTicker: { type: "STRING" },
+                                        purchaseDate: { type: "STRING" },
+                                        purchaseShares: { type: "NUMBER" },
+                                        purchasePrice: { type: "NUMBER" }
+                                    },
+                                    required: ["stockTicker", "purchaseDate", "purchaseShares", "purchasePrice"]
+                                }
+                            }
+                        }
+                    };
+                    
+                    // [修改] API Key 已移除，改為呼叫我們自己的後端代理
+                    const apiUrl = `/api/recognize-stock`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
+                        const jsonText = result.candidates[0].content.parts[0].text;
+                        const transactions = JSON.parse(jsonText);
+                        let addedCount = 0;
+
+                        if (transactions.length > 0) {
+                            transactions.forEach(tx => {
+                                const formattedDate = parseAndFormatDate(tx.purchaseDate);
+                                if (tx.stockTicker && formattedDate && !isNaN(parseFloat(tx.purchaseShares)) && !isNaN(parseFloat(tx.purchasePrice))) {
+                                    const newStock = {
+                                        uuid: self.crypto.randomUUID(),
+                                        id: tx.stockTicker.trim(),
+                                        date: formattedDate,
+                                        shares: parseFloat(tx.purchaseShares),
+                                        price: parseFloat(tx.purchasePrice),
+                                        manualDividends: []
+                                    };
+                                    portfolio.push(newStock);
+                                    addedCount++;
+                                } else {
+                                    console.warn("Skipping invalid transaction from image:", tx);
+                                }
+                            });
+                            
+                            if (addedCount > 0) {
+                                saveData();
+                                renderPortfolio();
+                                showToast(`成功從圖片新增 ${addedCount} 筆紀錄！`);
+                            } else {
+                                showToast('圖片中未找到可辨識的有效交易紀錄。', true);
+                            }
+                        } else {
+                            showToast('圖片中未找到可辨識的交易紀錄。', true);
+                        }
+                    } else {
+                         // [新增] 處理 Gemini 可能直接回傳錯誤訊息的狀況
+                         if (result.error) {
+                             console.error('API Error:', result.error.message);
+                             throw new Error(result.error.message);
+                         }
+                         throw new Error('無法解析 API 回應。');
+                    }
+                } catch (error) {
+                    console.error('圖片辨識失敗:', error);
+                    showToast(`圖片辨識失敗: ${error.message}`, true);
+                } finally {
+                    imageUploadText.textContent = '圖片輸入';
+                    imageUploadLoader.classList.add('hidden');
+                    imageUploadInput.value = '';
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function saveData() {
+            localStorage.setItem('stockPortfolio', JSON.stringify(portfolio));
+            localStorage.setItem('stockSettings', JSON.stringify(settings));
+        }
+
+        function loadData() {
+            const savedPortfolio = localStorage.getItem('stockPortfolio');
+            const savedSettings = localStorage.getItem('stockSettings');
+            if (savedPortfolio) portfolio = JSON.parse(savedPortfolio);
+            if (savedSettings) {
+                settings = JSON.parse(savedSettings);
+                fiscalYearStartSelect.value = settings.fiscalYearStart;
+                if (!settings.manualOverrides) {
+                    settings.manualOverrides = {};
+                }
+            }
+        }
+
+        function init() {
+            loadData();
+            renderPortfolio();
+            addStockForm.addEventListener('submit', handleAddStock);
+            fiscalYearStartSelect.addEventListener('change', handleSettingsChange);
+            addDividendForm.addEventListener('submit', handleAddDividend);
+            cancelAddDividendBtn.addEventListener('click', hideAddDividendModal);
+            imageUploadInput.addEventListener('change', handleImageUpload);
+            document.getElementById('purchaseDate').valueAsDate = new Date();
+        }
+
+        init();
+    </script>
+</body>
+</html>
